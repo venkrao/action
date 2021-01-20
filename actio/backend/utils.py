@@ -27,7 +27,7 @@ def get_coach_uid_from_username(username=None):
 def add_twilio_room_to_db(actio_session=None, unique_name=None, display_name=None, access_token=None):
     twilio_room = None
     try:
-        actio_session_obj = ActioSession.objects.get(id=actio_session)
+        actio_session_obj = ActioSession.objects.filter(session_identifier=actio_session)[0]
         twilio_room = TwilioRoom(actio_session=actio_session_obj, unique_name=unique_name, access_token=access_token,
                                  display_name=display_name)
         twilio_room.save()
@@ -94,13 +94,13 @@ def get_course_subcategory_id_from_course_subcategory_name(course_subcategory=No
     return course_subcategory.id
 
 
-def get_session_participants(actio_session_id=None):
+def get_session_participants(actio_session=None):
     """
-    :param actio_session_id:
+    :param actio_session:
     :return:
     """
-    participants = ActioSession.objects.filter(id=actio_session_id).values('user')
-
+    participants = ActioSession.objects.filter(session_identifier=actio_session).values('user')
+    print(participants)
     participants_list = []
     for i in participants:
         participants_list.append(i["user"])
@@ -118,13 +118,14 @@ def send_sns_push_notification(users=None, message=None):
     boto = Boto3Wrapper()
     for user in users:
         arn = get_aws_arn(user=user)
+        print("send push notification to {}".format(arn))
         boto.sns_publish(message=str(message), target_arn=arn)
 
 
 def create_twilio_room(actio_session=None):
     twilio_room = {}
-    actio_session_info = ActioSession.objects.get(id=actio_session)
-    unique_name = "{}-{}-{}-{}-{}".format(str(actio_session_info.course_subcategory).replace(" ", "-"),
+    actio_session_info = ActioSession.objects.filter(session_identifier=actio_session)[0]
+    unique_name = "{}-{}-{}-{}-{}-1".format(str(actio_session_info.course_subcategory).replace(" ", "-"),
                                           actio_session_info.coach, actio_session_info.conducted_on,
                                           actio_session_info.start_time, actio_session_info.end_time)
     display_name = actio_session_info.course_subcategory
@@ -149,15 +150,16 @@ def twilio_call_participants(actio_session=None):
     :param actio_session:
     :return:
     """
-    actio_session_info = ActioSession.objects.get(id=actio_session)
+    actio_session_info = ActioSession.objects.filter(session_identifier=actio_session)[0]
 
-    twilio_room_info = TwilioRoom.objects.filter(actio_session=actio_session_info.id).order_by('-id')[0]
+    twilio_room_info = TwilioRoom.objects.filter(actio_session=actio_session_info.id)[0]
 
     sns_message_body = {"unique_name": twilio_room_info.unique_name, "conducted_on": actio_session_info.conducted_on,
                        "start_time": actio_session_info.start_time, "end_time": actio_session_info.end_time,
                         "access_token": twilio_room_info.access_token, "coach": actio_session_info.coach}
     logger.info(sns_message_body)
 
-    session_participants = get_session_participants(actio_session_id=actio_session_info.id)
+    session_participants = get_session_participants(actio_session=actio_session_info.session_identifier)
+    print("participants of session {}: {}".format(actio_session, session_participants))
     logger.info(session_participants)
     send_sns_push_notification(users=session_participants, message=sns_message_body)

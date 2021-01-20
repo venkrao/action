@@ -8,6 +8,6 @@ admin.site.register(CourseCategory)
 admin.site.register(Language)
 admin.site.register(SessionPackageOffering)
 admin.site.register(ActioSession)
-
+admin.site.register(CoachAvailability)
 admin.site.register(AmazonResourceName)
 admin.site.register(TwilioRoom)

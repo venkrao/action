@@ -5,6 +5,7 @@ from .serializers import *
 from rest_framework import permissions
 from rest_framework_serializer_extensions.views import SerializerExtensionsAPIViewMixin
 from django.http import Http404
+from django.shortcuts import get_list_or_404, get_object_or_404
 
 from rest_framework import status
 import traceback
@@ -14,6 +15,79 @@ from .utils import *
 import logging
 
 logger = logging.getLogger(__name__)
+
+
+class RetrieveSessionByUuidView(SerializerExtensionsAPIViewMixin, ListAPIView):
+    permission_classes = [permissions.IsAuthenticated]
+    serializer_class = ActioSessionSerializer
+    queryset = ActioSession.objects.all()
+
+    extensions_expand = {'course_category', 'course_subcategory', 'coach'}
+
+    def get_queryset(self):
+        queryset = get_list_or_404(self.queryset, session_identifier=self.kwargs.get("session_uuid"))
+        return queryset
+
+class RetrieveSessionsView(SerializerExtensionsAPIViewMixin, ListAPIView):
+    permission_classes = [permissions.IsAuthenticated]
+    serializer_class = ActioSessionSerializer
+    queryset = ActioSession.objects.all()
+
+    extensions_expand = {'course_category', 'course_subcategory', 'coach'}
+
+    def get_queryset(self):
+        queryset = get_list_or_404(self.queryset, session_identifier=self.kwargs.get("session_uuid"))
+        return queryset
+
+
+class VideoCallParticipantsByUuidView(APIView):
+    """ Request from user who is a coach, with a Twilio room name will create a AWS SNS
+        push notification per user who's registered for this session. """
+
+    permission_classes = [permissions.IsAuthenticated]
+
+    # TODO: Create a Permission class for Coach. Only a user who's a Coach should be allowed to *generate*
+    # TODO: a Twilio access token
+
+    def get(self, request, **kwargs):
+        response = {"errors": None, "result": None}
+        actio_session = self.kwargs.get("session_uuid", None)
+
+        if actio_session is not None:
+            try:
+                twilio_call_participants(actio_session=actio_session)
+                response["result"] = "success"
+            except Exception as e:
+                response["errors"] = "Internal server error. Please contact support."
+                traceback.print_exc()
+                return Response(response, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+            return Response(response)
+
+        return Response(status=status.HTTP_404_NOT_FOUND)
+
+
+class TwilioRoomHandlerByUuidView(APIView):
+    permission_classes = [permissions.IsAuthenticated]
+
+    # TODO: Create a Permission class for Coach. Only a user who's a Coach should be allowed to *generate*
+    # TODO: a Twilio access token
+
+    def get(self, request, **kwargs):
+        action = self.kwargs.get("action", None)
+        actio_session = self.kwargs.get("session_uuid", None)
+
+        try:
+            if action == "create" and actio_session is not None:
+                twilio_room = create_twilio_room(actio_session=actio_session)
+                return Response(twilio_room)
+        except Exception:
+            traceback.print_exc()
+            return Response({"errors": "Internal server error. Please contact support."},
+                            status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+        return Response(status=status.HTTP_404_NOT_FOUND)
+
 
 
 class RetrieveSessions(SerializerExtensionsAPIViewMixin, ListAPIView):
@@ -42,52 +116,4 @@ class RetrieveSessions(SerializerExtensionsAPIViewMixin, ListAPIView):
                     raise Http404
 
 
-class TwilioRoomHandlerView(APIView):
-    """Create a Twilio room if not found, make an entry in the DB, return a Twilio room details to caller """
-    permission_classes = [permissions.IsAuthenticated]
 
-    # TODO: Create a Permission class for Coach. Only a user who's a Coach should be allowed to *generate*
-    # TODO: a Twilio access token
-
-    def get(self, request):
-        action = request.query_params.get("action", None)
-        actio_session = request.query_params.get("actio_session", None)
-
-        try:
-            if action == "create" and actio_session is not None:
-                twilio_room = create_twilio_room(actio_session=actio_session)
-                return Response(twilio_room)
-        except Exception:
-                traceback.print_exc()
-                return Response({"errors": "Internal server error. Please contact support."},
-                                status=status.HTTP_500_INTERNAL_SERVER_ERROR)
-
-        return Response(status=status.HTTP_404_NOT_FOUND)
-
-
-# Call Participants
-class VideoCallParticipantsView(APIView):
-
-    """ Request from user who is a coach, with a Twilio room name will create a AWS SNS
-    push notification per user who's registered for this session. """
-
-    permission_classes = [permissions.IsAuthenticated]
-
-    # TODO: Create a Permission class for Coach. Only a user who's a Coach should be allowed to *generate*
-    # TODO: a Twilio access token
-
-    def get(self, request):
-        response = {"errors": None, "result": None}
-        actio_session = request.query_params.get("actio_session", None)
-        if actio_session is not None:
-            try:
-                twilio_call_participants(actio_session=actio_session)
-                response["result"] = "success"
-            except Exception as e:
-                response["errors"] = "Internal server error. Please contact support."
-                traceback.print_exc()
-                return Response(response, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
-
-            return Response(response)
-
-        return Response(status=status.HTTP_404_NOT_FOUND)

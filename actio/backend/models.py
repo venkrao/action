@@ -2,7 +2,7 @@ from django.db import models
 from django.utils.translation import gettext_lazy as _
 from django.conf import settings
 from django.db.models.functions import Now
-
+import uuid
 
 # Create your models here.
 class Language(models.Model):
@@ -85,6 +85,20 @@ class Coach(models.Model):
         return "{}".format(self.display_name)
 
 
+class CoachAvailability(models.Model):
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    coach = models.ForeignKey(Coach, on_delete=models.CASCADE)
+    date = models.DateField()
+    start_time = models.TimeField()
+    end_time = models.TimeField()
+
+    class Meta:
+        unique_together = ['coach', 'date', 'start_time', 'end_time']
+
+    def __str__(self):
+        return "{}-{}-{}-{}".format(self.coach, self.date, self.start_time, self.end_time)
+
+
 class ActioSession(models.Model):
     class SessionStatus(models.TextChoices):
         scheduled = 'Scheduled', _("Scheduled")
@@ -95,17 +109,19 @@ class ActioSession(models.Model):
         on_delete=models.CASCADE
     )
 
-    course_category = models.ForeignKey(CourseCategory, on_delete=models.CASCADE)
-    course_subcategory = models.ForeignKey(CourseSubcategory, on_delete=models.CASCADE)
-    coach = models.ForeignKey(Coach, on_delete=models.CASCADE)
     conducted_on = models.DateField()
     start_time = models.TimeField()
     end_time = models.TimeField()
+
+    course_category = models.ForeignKey(CourseCategory, on_delete=models.CASCADE)
+    course_subcategory = models.ForeignKey(CourseSubcategory, on_delete=models.CASCADE)
+    coach = models.ForeignKey(Coach, on_delete=models.CASCADE)
+    session_identifier = models.ForeignKey(CoachAvailability, on_delete=models.CASCADE)
     session_status = models.CharField(max_length=10, choices=SessionStatus.choices)
 
     def __str__(self):
-        return "Coach: {}-User: {}-Date: {}-Course:{}-Status:{}".format(self.coach, self.user, self.conducted_on,
-                                                              self.course_subcategory, self.session_status)
+        return "User: {}-Course:{}-Session:{}-Status-{}".format(self.user, self.course_subcategory,
+                                                                self.session_identifier,self.session_status)
 
     class Meta:
         unique_together = [ 'coach', 'user', 'start_time', 'end_time', 'conducted_on']
