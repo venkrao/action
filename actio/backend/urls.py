@@ -1,8 +1,12 @@
 from django.urls import path
 from . import views
+import debug_toolbar
+from django.urls import include
+from django.conf.urls import url
+
 
 urlpatterns = [
-    path("sessions/<str:status>/", views.RetrieveSessionsView.as_view(), name="retrieve-sessions"),
+    path("sessions/status/<str:status>/", views.RetrieveSessionsByStatusView.as_view(), name="retrieve-sessions"),
     path("session/<uuid:session_uuid>/", views.RetrieveSessionByUuidView.as_view(), name="retrieve-sessions"),
     path("twilio/calls/video/<uuid:session_uuid>/", views.VideoCallParticipantsByUuidView.as_view(), name="twilio-video"),
     path("twilio/room/<str:action>/<uuid:session_uuid>/", views.TwilioRoomHandlerByUuidView.as_view(), name="twilio-room-handler"),
@@ -14,9 +18,6 @@ from rest_framework_simplejwt.views import (
     TokenRefreshView,
 )
 
-import debug_toolbar
-from django.urls import include
-from django.conf.urls import url
 
 # jwt endpoints
 urlpatterns += [

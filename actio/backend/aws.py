@@ -1,5 +1,6 @@
 import logging
 import boto3
+from boto3.exceptions import *
 import os
 from actio import settings
 

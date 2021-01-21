@@ -3,8 +3,10 @@ from django.db.models.functions import Now
 from .aws import *
 from .twilio_wrapper import *
 from twilio.base.exceptions import *
+from boto3.exceptions import *
 
 import logging
+from twilio.base.exceptions import TwilioRestException
 
 logger = logging.getLogger(__name__)
 logging.disable(logging.NOTSET)
@@ -123,7 +125,8 @@ def send_sns_push_notification(users=None, message=None):
 
 
 def create_twilio_room(actio_session=None):
-    twilio_room = {}
+    twilio_room = {"errors": {}}
+
     actio_session_info = ActioSession.objects.filter(session_identifier=actio_session)[0]
     unique_name = "{}-{}-{}-{}-{}-1".format(str(actio_session_info.course_subcategory).replace(" ", "-"),
                                           actio_session_info.coach, actio_session_info.conducted_on,
@@ -139,27 +142,36 @@ def create_twilio_room(actio_session=None):
         twilio_room["unique_name"] = room.unique_name
         twilio_room["display_name"] = str(room.display_name)
         twilio_room["access_token"] = room.access_token
-    except Exception:
-        raise
+    except TwilioRestException as twilio_exception:
+        twilio_room["errors"]["message"] = twilio_exception.msg
+    except Exception as e:
+        twilio_room["errors"]["message"] = str(e)
 
     return twilio_room
-
 
 def twilio_call_participants(actio_session=None):
     """
     :param actio_session:
     :return:
     """
-    actio_session_info = ActioSession.objects.filter(session_identifier=actio_session)[0]
+    response = {"errors": {}, "message": ""}
+    try:
+        actio_session_info = ActioSession.objects.filter(session_identifier=actio_session)[0]
 
-    twilio_room_info = TwilioRoom.objects.filter(actio_session=actio_session_info.id)[0]
+        twilio_room_info = TwilioRoom.objects.filter(actio_session=actio_session_info.id)[0]
+        sns_message_body = {"unique_name": twilio_room_info.unique_name, "conducted_on": actio_session_info.conducted_on,
+                           "start_time": actio_session_info.start_time, "end_time": actio_session_info.end_time,
+                            "access_token": twilio_room_info.access_token, "coach": actio_session_info.coach}
+        logger.info(sns_message_body)
 
-    sns_message_body = {"unique_name": twilio_room_info.unique_name, "conducted_on": actio_session_info.conducted_on,
-                       "start_time": actio_session_info.start_time, "end_time": actio_session_info.end_time,
-                        "access_token": twilio_room_info.access_token, "coach": actio_session_info.coach}
-    logger.info(sns_message_body)
+        session_participants = get_session_participants(actio_session=actio_session_info.session_identifier)
+        print("participants of session {}: {}".format(actio_session, session_participants))
+        logger.info(session_participants)
+        send_sns_push_notification(users=session_participants, message=sns_message_body)
+        response["message"] = "Push notification sent to all participants."
+    except Boto3Error as e:
+        response["errors"]["message"] = "Could not send push notifications"
+    except Exception as e:
+        response["errors"]["message"] = "Internal server error."
 
-    session_participants = get_session_participants(actio_session=actio_session_info.session_identifier)
-    print("participants of session {}: {}".format(actio_session, session_participants))
-    logger.info(session_participants)
-    send_sns_push_notification(users=session_participants, message=sns_message_body)
+    return response

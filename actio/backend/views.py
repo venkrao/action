@@ -8,7 +8,6 @@ from django.http import Http404
 from django.shortcuts import get_list_or_404, get_object_or_404
 
 from rest_framework import status
-import traceback
 
 from .utils import *
 
@@ -28,7 +27,8 @@ class RetrieveSessionByUuidView(SerializerExtensionsAPIViewMixin, ListAPIView):
         queryset = get_list_or_404(self.queryset, session_identifier=self.kwargs.get("session_uuid"))
         return queryset
 
-class RetrieveSessionsView(SerializerExtensionsAPIViewMixin, ListAPIView):
+
+class RetrieveSessionsByStatusView(SerializerExtensionsAPIViewMixin, ListAPIView):
     permission_classes = [permissions.IsAuthenticated]
     serializer_class = ActioSessionSerializer
     queryset = ActioSession.objects.all()
@@ -36,7 +36,7 @@ class RetrieveSessionsView(SerializerExtensionsAPIViewMixin, ListAPIView):
     extensions_expand = {'course_category', 'course_subcategory', 'coach'}
 
     def get_queryset(self):
-        queryset = get_list_or_404(self.queryset, session_identifier=self.kwargs.get("session_uuid"))
+        queryset = get_list_or_404(self.queryset, session_status=self.kwargs.get("status"))
         return queryset
 
 
@@ -50,19 +50,18 @@ class VideoCallParticipantsByUuidView(APIView):
     # TODO: a Twilio access token
 
     def get(self, request, **kwargs):
-        response = {"errors": None, "result": None}
         actio_session = self.kwargs.get("session_uuid", None)
 
         if actio_session is not None:
-            try:
-                twilio_call_participants(actio_session=actio_session)
-                response["result"] = "success"
-            except Exception as e:
-                response["errors"] = "Internal server error. Please contact support."
-                traceback.print_exc()
-                return Response(response, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+            response = twilio_call_participants(actio_session=actio_session)
+            if response["errors"]:
+                http_status=status.HTTP_500_INTERNAL_SERVER_ERROR
+                del response["message"]
+            else:
+                http_status = status.HTTP_200_OK
+                del response["errors"]
 
-            return Response(response)
+            return Response(response, status=http_status)
 
         return Response(status=status.HTTP_404_NOT_FOUND)
 
@@ -77,17 +76,19 @@ class TwilioRoomHandlerByUuidView(APIView):
         action = self.kwargs.get("action", None)
         actio_session = self.kwargs.get("session_uuid", None)
 
-        try:
-            if action == "create" and actio_session is not None:
-                twilio_room = create_twilio_room(actio_session=actio_session)
-                return Response(twilio_room)
-        except Exception:
-            traceback.print_exc()
-            return Response({"errors": "Internal server error. Please contact support."},
-                            status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+        if action == "create" and actio_session is not None:
+            twilio_room = create_twilio_room(actio_session=actio_session)
+            if twilio_room["errors"]:
+                http_status = status.HTTP_500_INTERNAL_SERVER_ERROR
+
+            else:
+                http_status = status.HTTP_200_OK
+                del twilio_room["errors"]
+
+            return Response(twilio_room, status=http_status)
 
         return Response(status=status.HTTP_404_NOT_FOUND)
-
 
 
 class RetrieveSessions(SerializerExtensionsAPIViewMixin, ListAPIView):
